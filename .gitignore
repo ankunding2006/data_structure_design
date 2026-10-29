@@ -2,6 +2,11 @@
 *.o
 *.obj
 *.exe
+build/
+
+# Package and Temporary Files
+*.zip
+qt_coverage_preview.png
 
 # Python Cache
 __pycache__/

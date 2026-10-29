@@ -1,21 +1,17 @@
 @echo off
-if not exist uav_solver.exe (
-    echo [Notice] Compiling main.cpp first ...
-    g++ -O2 -Wall main.cpp -o uav_solver.exe
+set PATH=C:\msys64\ucrt64\bin;%PATH%
+
+if not exist "build\UAVCoverageOptimizer.exe" (
+    echo [Notice] Compiling project first ...
+    call build.bat
     if %ERRORLEVEL% NEQ 0 (
-        echo [Error] Compilation failed!
+        echo [Error] Failed to build application.
         pause
         exit /b 1
     )
 )
 
-echo =======================================================
-echo  1. Running C++ Core Solver (Output in terminal)
-echo =======================================================
-uav_solver.exe 42 16 20.0 100.0
-
-echo.
-echo =======================================================
-echo  2. Launching Graphical User Interface (GUI)
-echo =======================================================
-python gui.py
+echo ========================================================
+echo  Launching UAV Coverage & Power Optimization System (Qt6)
+echo ========================================================
+start "" "build\UAVCoverageOptimizer.exe"
