@@ -1,0 +1,17 @@
+# Compiled Object and Binary Files
+*.o
+*.obj
+*.exe
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Temporary and Editor Files
+.vscode/
+.idea/
+*.swp
+*.bak
+Thumbs.db
+Desktop.ini
