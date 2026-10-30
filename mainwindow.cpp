@@ -9,42 +9,134 @@
 #include <QMessageBox>
 #include <QStatusBar>
 #include <QDateTime>
+#include <QMenuBar>
+#include <QToolBar>
+#include <QSplitter>
+#include <QGraphicsOpacityEffect>
+#include <QPropertyAnimation>
+#include <QEasingCurve>
 #include <random>
 
 MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent), m_canvas(nullptr) {
+    : QMainWindow(parent),
+      m_canvas(nullptr),
+      m_leftPanelExpanded(true),
+      m_leftPanelAnim(nullptr),
+      m_infoPanelFadeAnim(nullptr),
+      m_bottomAnim(nullptr),
+      m_statusDots(0),
+      m_isSolving(false)
+{
     setWindowTitle("无人机地面基站覆盖与功率优化系统 [工业仿真平台] - 数据结构与算法分析");
-    resize(1360, 900);
-    setMinimumSize(1100, 750);
+    resize(1440, 920);
+    setMinimumSize(1150, 750);
 
+    setupMenuBar();
+    setupToolBar();
     setupUI();
     applyIndustrialTheme();
 
-    // 默认生成初值并全流程运行
+    // 状态栏动态更新定时器
+    m_statusTimer = new QTimer(this);
+    connect(m_statusTimer, &QTimer::timeout, this, &MainWindow::onStatusTick);
+    m_statusTimer->start(400);
+
+    // 初始全流程求解
     onRunAllClicked();
 }
 
 MainWindow::~MainWindow() {
 }
 
+void MainWindow::setupMenuBar() {
+    QMenuBar *menuBar = this->menuBar();
+
+    // 1. 文件菜单
+    QMenu *fileMenu = menuBar->addMenu("文件(&F)");
+    m_actNewSim = fileMenu->addAction("新建/重置仿真(&N)", this, &MainWindow::onRunAllClicked, QKeySequence::New);
+    fileMenu->addSeparator();
+    m_actSaveImage = fileMenu->addAction("保存画布图像(&S)...", this, &MainWindow::onExportImageClicked, QKeySequence::Save);
+    m_actExportCSV = fileMenu->addAction("导出数据表格(CSV)...", this, &MainWindow::onExportCSVClicked, QKeySequence("Ctrl+E"));
+    fileMenu->addAction("导出结果数据(JSON)...", this, &MainWindow::onExportJSONClicked);
+    fileMenu->addSeparator();
+    m_actQuit = fileMenu->addAction("退出(&Q)", this, &QWidget::close, QKeySequence::Quit);
+
+    // 2. 视图菜单
+    QMenu *viewMenu = menuBar->addMenu("视图(&V)");
+    m_actViewDual = viewMenu->addAction("双屏对比模式(&D)", [this](){ m_comboViewMode->setCurrentIndex(0); });
+    m_actViewKM = viewMenu->addAction("K-Means 基线模式(&K)", [this](){ m_comboViewMode->setCurrentIndex(1); });
+    m_actViewSA = viewMenu->addAction("模拟退火优化模式(&A)", [this](){ m_comboViewMode->setCurrentIndex(2); });
+    viewMenu->addSeparator();
+    viewMenu->addAction("折叠/展开左侧面板(&T)", this, &MainWindow::onToggleLeftPanel, QKeySequence("Ctrl+B"));
+    viewMenu->addAction("重置画布缩放居中(&R)", this, &MainWindow::onResetViewClicked, QKeySequence("Ctrl+0"));
+    viewMenu->addSeparator();
+    m_actFullscreen = viewMenu->addAction("全屏模式切换(&F)", [this](){
+        if (isFullScreen()) showNormal(); else showFullScreen();
+    }, QKeySequence("F11"));
+
+    // 3. 算法菜单
+    QMenu *algoMenu = menuBar->addMenu("算法调度(&A)");
+    m_actGenUsers = algoMenu->addAction("随机生成地面用户链表(&G)", this, &MainWindow::onGenerateClicked, QKeySequence("Ctrl+G"));
+    m_actRunKMeans = algoMenu->addAction("执行 K-Means 基线聚类(&K)", this, &MainWindow::onKMeansClicked);
+    m_actRunSA = algoMenu->addAction("执行 模拟退火 Minimax 优化(&M)", this, &MainWindow::onSAClicked);
+    algoMenu->addSeparator();
+    m_actRunAll = algoMenu->addAction("一键全流程求解对比(&R)", this, &MainWindow::onRunAllClicked, QKeySequence("Ctrl+R"));
+
+    // 4. 帮助菜单
+    QMenu *helpMenu = menuBar->addMenu("帮助(&H)");
+    m_actMath = helpMenu->addAction("数学原理与香农容量(&M)", this, &MainWindow::onMathPrincipleClicked);
+    m_actUsage = helpMenu->addAction("工业平台使用说明(&U)", this, &MainWindow::onUsageClicked);
+    helpMenu->addSeparator();
+    m_actAbout = helpMenu->addAction("关于本系统(&A)", this, &MainWindow::onAboutClicked);
+}
+
+void MainWindow::setupToolBar() {
+    QToolBar *toolBar = addToolBar("主要操作");
+    toolBar->setMovable(false);
+    toolBar->setIconSize(QSize(18, 18));
+    toolBar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+
+    QAction *actRun = toolBar->addAction("▶ 一键全流程求解", this, &MainWindow::onRunAllClicked);
+    actRun->setToolTip("生成随机链表、执行K-Means基线并执行SA Minimax优化 (Ctrl+R)");
+
+    QAction *actRand = toolBar->addAction("🎲 随机样本", this, &MainWindow::onRandomSeedClicked);
+    actRand->setToolTip("更换随机数种子并重新计算");
+
+    toolBar->addSeparator();
+
+    QAction *actKM = toolBar->addAction("📊 仅K-Means", this, &MainWindow::onKMeansClicked);
+    QAction *actSA = toolBar->addAction("⚡ 仅SA优化", this, &MainWindow::onSAClicked);
+
+    toolBar->addSeparator();
+
+    QAction *actResetView = toolBar->addAction("🔍 重置视野", this, &MainWindow::onResetViewClicked);
+    QAction *actSave = toolBar->addAction("📷 导出图像", this, &MainWindow::onExportImageClicked);
+    QAction *actCSV = toolBar->addAction("📄 导出CSV", this, &MainWindow::onExportCSVClicked);
+
+    toolBar->addSeparator();
+
+    QAction *actToggleLeft = toolBar->addAction("◨ 侧边栏", this, &MainWindow::onToggleLeftPanel);
+    actToggleLeft->setToolTip("展开/收起左侧控制参数栏 (Ctrl+B)");
+}
+
 void MainWindow::setupUI() {
     QWidget *centralWidget = new QWidget(this);
     setCentralWidget(centralWidget);
     QHBoxLayout *mainLayout = new QHBoxLayout(centralWidget);
-    mainLayout->setContentsMargins(10, 10, 10, 10);
-    mainLayout->setSpacing(10);
+    mainLayout->setContentsMargins(6, 6, 6, 6);
+    mainLayout->setSpacing(6);
 
     // ========================================================================
-    // 左侧面板：控制与参数输入
+    // 1. 左侧面板：控制与参数输入（支持平滑折叠）
     // ========================================================================
-    QWidget *leftPanel = new QWidget(this);
-    leftPanel->setFixedWidth(310);
-    QVBoxLayout *leftLayout = new QVBoxLayout(leftPanel);
+    m_leftPanel = new QWidget(this);
+    m_leftPanel->setFixedWidth(290);
+    QVBoxLayout *leftLayout = new QVBoxLayout(m_leftPanel);
     leftLayout->setContentsMargins(0, 0, 0, 0);
     leftLayout->setSpacing(8);
 
-    // 1. 系统参数组
-    QGroupBox *paramGroup = new QGroupBox("系统模型与仿真参数", leftPanel);
+    // 系统参数组
+    QGroupBox *paramGroup = new QGroupBox("系统模型与环境参数", m_leftPanel);
     QGridLayout *paramLayout = new QGridLayout(paramGroup);
     paramLayout->setContentsMargins(10, 14, 10, 10);
     paramLayout->setVerticalSpacing(6);
@@ -55,14 +147,14 @@ void MainWindow::setupUI() {
     m_spinN->setValue(16);
     paramLayout->addWidget(m_spinN, 0, 1);
 
-    paramLayout->addWidget(new QLabel("飞行高度 G (m):"), 1, 0);
+    paramLayout->addWidget(new QLabel("无人机飞行高度 G (m):"), 1, 0);
     m_spinG = new QDoubleSpinBox(paramGroup);
     m_spinG->setRange(10.0, 100.0);
     m_spinG->setValue(20.0);
     m_spinG->setSingleStep(1.0);
     paramLayout->addWidget(m_spinG, 1, 1);
 
-    paramLayout->addWidget(new QLabel("监控区域 L (m):"), 2, 0);
+    paramLayout->addWidget(new QLabel("覆盖区域边长 L (m):"), 2, 0);
     m_spinArea = new QDoubleSpinBox(paramGroup);
     m_spinArea->setRange(50.0, 500.0);
     m_spinArea->setValue(100.0);
@@ -75,14 +167,14 @@ void MainWindow::setupUI() {
     m_spinSeed->setRange(0, 999999);
     m_spinSeed->setValue(42);
     QPushButton *btnRandomSeed = new QPushButton("🎲", paramGroup);
-    btnRandomSeed->setToolTip("生成随机种子");
-    btnRandomSeed->setFixedWidth(30);
+    btnRandomSeed->setToolTip("随机生成新种子");
+    btnRandomSeed->setFixedWidth(32);
     connect(btnRandomSeed, &QPushButton::clicked, this, &MainWindow::onRandomSeedClicked);
     seedLayout->addWidget(m_spinSeed);
     seedLayout->addWidget(btnRandomSeed);
     paramLayout->addLayout(seedLayout, 3, 1);
 
-    paramLayout->addWidget(new QLabel("容量区间 Rn (bps/Hz):"), 4, 0);
+    paramLayout->addWidget(new QLabel("目标容量需求 Rn:"), 4, 0);
     QHBoxLayout *rLayout = new QHBoxLayout();
     m_spinRMin = new QDoubleSpinBox(paramGroup);
     m_spinRMin->setRange(0.5, 10.0);
@@ -96,23 +188,23 @@ void MainWindow::setupUI() {
 
     leftLayout->addWidget(paramGroup);
 
-    // 2. 算法控制组
-    QGroupBox *solverGroup = new QGroupBox("算法求解与仿真调度", leftPanel);
+    // 算法求解控制
+    QGroupBox *solverGroup = new QGroupBox("仿真引擎与算法调度", m_leftPanel);
     QVBoxLayout *solverLayout = new QVBoxLayout(solverGroup);
     solverLayout->setContentsMargins(10, 14, 10, 10);
     solverLayout->setSpacing(6);
 
-    QPushButton *btnRunAll = new QPushButton("▶ 一键全流程求解与对比", solverGroup);
-    btnRunAll->setObjectName("primaryBtn");
-    btnRunAll->setMinimumHeight(38);
-    connect(btnRunAll, &QPushButton::clicked, this, &MainWindow::onRunAllClicked);
-    solverLayout->addWidget(btnRunAll);
+    m_btnRunAll = new QPushButton("▶ 一键全流程求解与对比", solverGroup);
+    m_btnRunAll->setObjectName("primaryBtn");
+    m_btnRunAll->setMinimumHeight(40);
+    connect(m_btnRunAll, &QPushButton::clicked, this, &MainWindow::onRunAllClicked);
+    solverLayout->addWidget(m_btnRunAll);
 
-    QPushButton *btnGenerate = new QPushButton("1. 重新随机生成用户链表", solverGroup);
+    QPushButton *btnGenerate = new QPushButton("1. 重新生成用户链表 (随机坐标/容量)", solverGroup);
     connect(btnGenerate, &QPushButton::clicked, this, &MainWindow::onGenerateClicked);
     solverLayout->addWidget(btnGenerate);
 
-    QPushButton *btnKMeans = new QPushButton("2. 仅执行 K-Means 基线聚类", solverGroup);
+    QPushButton *btnKMeans = new QPushButton("2. 仅执行 K-Means 聚类划分", solverGroup);
     connect(btnKMeans, &QPushButton::clicked, this, &MainWindow::onKMeansClicked);
     solverLayout->addWidget(btnKMeans);
 
@@ -122,13 +214,13 @@ void MainWindow::setupUI() {
 
     leftLayout->addWidget(solverGroup);
 
-    // 3. 视图渲染与导出组
-    QGroupBox *viewGroup = new QGroupBox("显示渲染与成果导出", leftPanel);
+    // 视图显示控制
+    QGroupBox *viewGroup = new QGroupBox("视图渲染控制", m_leftPanel);
     QVBoxLayout *viewLayout = new QVBoxLayout(viewGroup);
     viewLayout->setContentsMargins(10, 14, 10, 10);
     viewLayout->setSpacing(6);
 
-    viewLayout->addWidget(new QLabel("视图布局模式:"));
+    viewLayout->addWidget(new QLabel("布局模式:"));
     m_comboViewMode = new QComboBox(viewGroup);
     m_comboViewMode->addItem("双屏分栏对比 (基线 vs SA)");
     m_comboViewMode->addItem("单屏模式：K-Means 基线方案");
@@ -136,56 +228,47 @@ void MainWindow::setupUI() {
     connect(m_comboViewMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onViewModeChanged);
     viewLayout->addWidget(m_comboViewMode);
 
-    m_chkCircles = new QCheckBox("显示无人机覆盖外接圆", viewGroup);
+    m_chkCircles = new QCheckBox("渲染无人机覆盖圆与半径", viewGroup);
     m_chkCircles->setChecked(true);
     connect(m_chkCircles, &QCheckBox::toggled, [this](bool checked){ m_canvas->setShowCircles(checked); });
     viewLayout->addWidget(m_chkCircles);
 
-    m_chkLinks = new QCheckBox("显示用户-基站通信连线", viewGroup);
+    m_chkLinks = new QCheckBox("渲染通信矢量连线与方向", viewGroup);
     m_chkLinks->setChecked(true);
     connect(m_chkLinks, &QCheckBox::toggled, [this](bool checked){ m_canvas->setShowLinks(checked); });
     viewLayout->addWidget(m_chkLinks);
 
-    QPushButton *btnResetView = new QPushButton("🔍 重置画布缩放与居中", viewGroup);
+    QPushButton *btnResetView = new QPushButton("🔍 重置画布视角与居中", viewGroup);
     connect(btnResetView, &QPushButton::clicked, this, &MainWindow::onResetViewClicked);
     viewLayout->addWidget(btnResetView);
-
-    QHBoxLayout *exportLayout = new QHBoxLayout();
-    QPushButton *btnExportImg = new QPushButton("📷 导出高清图", viewGroup);
-    connect(btnExportImg, &QPushButton::clicked, this, &MainWindow::onExportImageClicked);
-    QPushButton *btnExportCSV = new QPushButton("📊 导出CSV", viewGroup);
-    connect(btnExportCSV, &QPushButton::clicked, this, &MainWindow::onExportCSVClicked);
-    exportLayout->addWidget(btnExportImg);
-    exportLayout->addWidget(btnExportCSV);
-    viewLayout->addLayout(exportLayout);
 
     leftLayout->addWidget(viewGroup);
     leftLayout->addStretch();
 
-    mainLayout->addWidget(leftPanel);
+    mainLayout->addWidget(m_leftPanel);
 
     // ========================================================================
-    // 右侧区域：主画布 + 底部信息面板
+    // 2. 中间主区域：画布 + 底部信息面板
     // ========================================================================
-    QWidget *rightPanel = new QWidget(this);
-    QVBoxLayout *rightLayout = new QVBoxLayout(rightPanel);
-    rightLayout->setContentsMargins(0, 0, 0, 0);
-    rightLayout->setSpacing(8);
+    QWidget *centerPanel = new QWidget(this);
+    QVBoxLayout *centerLayout = new QVBoxLayout(centerPanel);
+    centerLayout->setContentsMargins(0, 0, 0, 0);
+    centerLayout->setSpacing(6);
 
-    // 核心画布
-    m_canvas = new UAVCanvas(rightPanel);
+    // 工业遥测矢量画布
+    m_canvas = new UAVCanvas(centerPanel);
     m_canvas->setModel(&m_model);
     connect(m_canvas, &UAVCanvas::userClicked, this, &MainWindow::onCanvasUserClicked);
-    rightLayout->addWidget(m_canvas, 6);
+    centerLayout->addWidget(m_canvas, 1);
 
-    // 底部选项卡：量化指标对比、链表数据审查、数学创新原理
-    m_bottomTabs = new QTabWidget(rightPanel);
-    m_bottomTabs->setFixedHeight(220);
+    // 底部选项卡
+    m_bottomTabs = new QTabWidget(centerPanel);
+    m_bottomTabs->setFixedHeight(230);
 
     // Tab 1: 算法量化指标对比表
     m_tableMetrics = new QTableWidget(m_bottomTabs);
     m_tableMetrics->setColumnCount(4);
-    m_tableMetrics->setHorizontalHeaderLabels({"量化指标项", "方案 A：K-Means 基线聚类", "方案 B：模拟退火 Minimax 优化", "创新算法优化改善幅度"});
+    m_tableMetrics->setHorizontalHeaderLabels({"量化指标项目", "方案 A：K-Means 基准聚类", "方案 B：模拟退火 Minimax 优化", "创新算法优化改善幅度"});
     m_tableMetrics->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     m_tableMetrics->verticalHeader()->setVisible(false);
     m_tableMetrics->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -196,9 +279,9 @@ void MainWindow::setupUI() {
     m_tableUsers = new QTableWidget(m_bottomTabs);
     m_tableUsers->setColumnCount(9);
     m_tableUsers->setHorizontalHeaderLabels({
-        "用户ID", "平面坐标 (x, y)", "需求容量 Rn",
-        "KMeans归属", "KMeans空间距离", "KMeans发射功率",
-        "SA归属", "SA空间距离", "SA发射功率"
+        "用户ID", "坐标 (x, y)", "所需容量 Rn",
+        "KM分配基站", "KM三维距离", "KM最小功率",
+        "SA分配基站", "SA三维距离", "SA最小功率"
     });
     m_tableUsers->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     m_tableUsers->verticalHeader()->setVisible(false);
@@ -206,37 +289,141 @@ void MainWindow::setupUI() {
     m_tableUsers->setSelectionMode(QAbstractItemView::SingleSelection);
     m_tableUsers->setEditTriggers(QAbstractItemView::NoEditTriggers);
     connect(m_tableUsers, &QTableWidget::cellClicked, this, &MainWindow::onTableUserSelected);
-    m_bottomTabs->addTab(m_tableUsers, "📋 地面用户链式存储节点数据表");
+    m_bottomTabs->addTab(m_tableUsers, "📋 地面用户链式存储节点数据审查表");
 
     // Tab 3: 数学原理与创新说明
     m_textTheory = new QTextEdit(m_bottomTabs);
     m_textTheory->setReadOnly(true);
-    m_bottomTabs->addTab(m_textTheory, "💡 算法数学原理与创新报告摘要");
+    m_bottomTabs->addTab(m_textTheory, "💡 算法数学原理与课程设计报告摘要");
     updateTheoryTab();
 
-    rightLayout->addWidget(m_bottomTabs, 4);
-    mainLayout->addWidget(rightPanel, 1);
+    centerLayout->addWidget(m_bottomTabs);
+    mainLayout->addWidget(centerPanel, 1);
 
-    // 底部状态栏
-    m_statusLabel = new QLabel("系统就绪", this);
-    statusBar()->addWidget(m_statusLabel);
+    // ========================================================================
+    // 3. 右侧面板：当前选中用户遥测详情卡片
+    // ========================================================================
+    m_rightInfoPanel = new QWidget(this);
+    m_rightInfoPanel->setFixedWidth(240);
+    QVBoxLayout *rightLayout = new QVBoxLayout(m_rightInfoPanel);
+    rightLayout->setContentsMargins(4, 0, 4, 0);
+    rightLayout->setSpacing(8);
+
+    QGroupBox *infoGroup = new QGroupBox("节点遥测监视卡片", m_rightInfoPanel);
+    QVBoxLayout *infoLayout = new QVBoxLayout(infoGroup);
+    infoLayout->setContentsMargins(10, 14, 10, 10);
+    infoLayout->setSpacing(6);
+
+    m_infoUserId = new QLabel("未选中任何节点", infoGroup);
+    m_infoUserId->setStyleSheet("font-size: 14px; font-weight: bold; color: #00B4D8;");
+    infoLayout->addWidget(m_infoUserId);
+
+    m_infoCoord = new QLabel("坐标: --", infoGroup);
+    m_infoCapacity = new QLabel("容量需求 Rn: --", infoGroup);
+    infoLayout->addWidget(m_infoCoord);
+    infoLayout->addWidget(m_infoCapacity);
+
+    QFrame *line1 = new QFrame(infoGroup);
+    line1->setFrameShape(QFrame::HLine);
+    line1->setStyleSheet("color: #2D333B;");
+    infoLayout->addWidget(line1);
+
+    infoLayout->addWidget(new QLabel("<b>[方案 A: K-Means]</b>", infoGroup));
+    m_infoKmDist = new QLabel("空间距离: --", infoGroup);
+    m_infoKmPower = new QLabel("发射功率: --", infoGroup);
+    infoLayout->addWidget(m_infoKmDist);
+    infoLayout->addWidget(m_infoKmPower);
+
+    QFrame *line2 = new QFrame(infoGroup);
+    line2->setFrameShape(QFrame::HLine);
+    line2->setStyleSheet("color: #2D333B;");
+    infoLayout->addWidget(line2);
+
+    infoLayout->addWidget(new QLabel("<b>[方案 B: 模拟退火]</b>", infoGroup));
+    m_infoSaDist = new QLabel("空间距离: --", infoGroup);
+    m_infoSaPower = new QLabel("发射功率: --", infoGroup);
+    infoLayout->addWidget(m_infoSaDist);
+    infoLayout->addWidget(m_infoSaPower);
+
+    m_infoReassign = new QLabel("", infoGroup);
+    m_infoReassign->setWordWrap(true);
+    infoLayout->addWidget(m_infoReassign);
+
+    infoLayout->addStretch();
+    rightLayout->addWidget(infoGroup);
+
+    mainLayout->addWidget(m_rightInfoPanel);
+
+    // 状态栏初始化
+    m_statusCoord = new QLabel("坐标: 区域内", this);
+    m_statusAlgo = new QLabel("状态: 就绪", this);
+    m_statusVersion = new QLabel("v2.0 工业级仿真平台 | 数据结构课程设计", this);
+
+    statusBar()->addWidget(m_statusAlgo, 2);
+    statusBar()->addPermanentWidget(m_statusCoord, 1);
+    statusBar()->addPermanentWidget(m_statusVersion);
 }
 
 void MainWindow::applyIndustrialTheme() {
     QString qss = R"(
         QMainWindow, QWidget {
-            background-color: #17181C;
-            color: #DCE0E8;
+            background-color: #0D1117;
+            color: #C9D1D9;
             font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
             font-size: 12px;
         }
+        QMenuBar {
+            background-color: #161B22;
+            color: #C9D1D9;
+            border-bottom: 1px solid #30363D;
+            padding: 2px 4px;
+        }
+        QMenuBar::item:selected {
+            background-color: #21262D;
+            border-radius: 4px;
+            color: #58A6FF;
+        }
+        QMenu {
+            background-color: #161B22;
+            border: 1px solid #30363D;
+            padding: 4px 0px;
+        }
+        QMenu::item {
+            padding: 6px 24px;
+            color: #C9D1D9;
+        }
+        QMenu::item:selected {
+            background-color: #1F6FEB;
+            color: #FFFFFF;
+        }
+        QToolBar {
+            background-color: #161B22;
+            border-bottom: 1px solid #30363D;
+            spacing: 6px;
+            padding: 4px 8px;
+        }
+        QToolButton {
+            background-color: #21262D;
+            border: 1px solid #30363D;
+            border-radius: 4px;
+            padding: 5px 10px;
+            color: #C9D1D9;
+            font-weight: 500;
+        }
+        QToolButton:hover {
+            background-color: #30363D;
+            border-color: #58A6FF;
+            color: #FFFFFF;
+        }
         QGroupBox {
-            border: 1px solid #2F3340;
+            border: 1px solid #30363D;
+            border-top: 2px solid #1F6FEB;
             border-radius: 6px;
             margin-top: 14px;
-            padding-top: 10px;
+            padding-top: 12px;
             font-weight: bold;
-            color: #A0B2C6;
+            color: #58A6FF;
+            background-color: #161B22;
         }
         QGroupBox::title {
             subcontrol-origin: margin;
@@ -245,88 +432,116 @@ void MainWindow::applyIndustrialTheme() {
             padding: 0 4px;
         }
         QPushButton {
-            background-color: #252833;
-            border: 1px solid #3A3F50;
-            border-radius: 4px;
+            background-color: #21262D;
+            border: 1px solid #30363D;
+            border-radius: 5px;
             padding: 6px 12px;
-            color: #E2E6EF;
+            color: #C9D1D9;
+            font-weight: 500;
         }
         QPushButton:hover {
-            background-color: #313645;
-            border-color: #0084FF;
+            background-color: #30363D;
+            border-color: #58A6FF;
+            color: #FFFFFF;
         }
         QPushButton:pressed {
-            background-color: #1C1E26;
+            background-color: #161B22;
         }
         QPushButton#primaryBtn {
-            background-color: #007ACC;
-            border: 1px solid #0098FF;
+            background-color: #238636;
+            border: 1px solid #2EA043;
             font-weight: bold;
             color: #FFFFFF;
         }
         QPushButton#primaryBtn:hover {
-            background-color: #008AE6;
+            background-color: #2EA043;
+            border-color: #3FB950;
         }
         QSpinBox, QDoubleSpinBox, QComboBox {
-            background-color: #21242D;
-            border: 1px solid #373C4B;
+            background-color: #0D1117;
+            border: 1px solid #30363D;
             border-radius: 4px;
             padding: 4px 6px;
             color: #FFFFFF;
         }
         QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
-            border-color: #007ACC;
+            border-color: #58A6FF;
         }
         QCheckBox {
-            color: #C0C5D2;
+            color: #C9D1D9;
             spacing: 6px;
         }
+        QCheckBox::indicator {
+            width: 14px;
+            height: 14px;
+            border: 1px solid #30363D;
+            border-radius: 3px;
+            background-color: #0D1117;
+        }
+        QCheckBox::indicator:checked {
+            background-color: #1F6FEB;
+            border-color: #58A6FF;
+        }
         QTabWidget::pane {
-            border: 1px solid #2C303D;
-            background-color: #1A1C23;
-            border-radius: 4px;
+            border: 1px solid #30363D;
+            background-color: #161B22;
+            border-radius: 6px;
         }
         QTabBar::tab {
-            background-color: #20232C;
-            color: #9AA0B2;
-            border: 1px solid #2C303D;
+            background-color: #0D1117;
+            color: #8B949E;
+            border: 1px solid #30363D;
             border-bottom: none;
-            padding: 6px 14px;
+            padding: 7px 16px;
             border-top-left-radius: 4px;
             border-top-right-radius: 4px;
             margin-right: 2px;
         }
         QTabBar::tab:selected {
-            background-color: #1A1C23;
-            color: #00B4D8;
+            background-color: #161B22;
+            color: #58A6FF;
             font-weight: bold;
-            border-top: 2px solid #00B4D8;
+            border-bottom: 2px solid #58A6FF;
         }
         QTableWidget {
-            background-color: #1A1C23;
-            gridline-color: #2B2F3D;
+            background-color: #161B22;
+            gridline-color: #21262D;
             border: none;
-            color: #E0E4F0;
+            color: #C9D1D9;
+            selection-background-color: #1F6FEB;
         }
         QHeaderView::section {
-            background-color: #222631;
-            color: #A4ADC0;
+            background-color: #21262D;
+            color: #8B949E;
             padding: 5px;
-            border: 1px solid #2B2F3D;
+            border: 1px solid #30363D;
             font-weight: bold;
         }
         QTextEdit {
-            background-color: #1A1C23;
+            background-color: #161B22;
             border: none;
-            color: #C5CBD8;
-            line-height: 1.4;
+            color: #C9D1D9;
         }
         QStatusBar {
-            background-color: #141518;
-            color: #7A8194;
-            border-top: 1px solid #252833;
+            background-color: #161B22;
+            color: #8B949E;
+            border-top: 1px solid #30363D;
+        }
+        QScrollBar:vertical {
+            background: #0D1117;
+            width: 8px;
+            margin: 0px;
+        }
+        QScrollBar::handle:vertical {
+            background: #30363D;
+            min-height: 20px;
+            border-radius: 4px;
+        }
+        QScrollBar::handle:vertical:hover {
+            background: #58A6FF;
         }
     )";
+
     if (auto app = qobject_cast<QApplication*>(QCoreApplication::instance())) {
         app->setStyleSheet(qss);
     } else {
@@ -342,18 +557,22 @@ void MainWindow::onRunAllClicked() {
     double rmin = m_spinRMin->value();
     double rmax = m_spinRMax->value();
 
+    m_isSolving = true;
     m_model.generateRandomUsers(n, area, g, rmin, rmax, seed);
     m_model.solveAll();
 
-    m_canvas->update();
-    updateTables();
+    // 触发画布入场动画
+    m_canvas->playEntranceAnimation();
 
-    m_statusLabel->setText(QString("[%1] 全流程求解完成：N=%2, G=%3m, 种子=%4, 瓶颈覆盖半径下降 %5%")
-                               .arg(QDateTime::currentDateTime().toString("HH:mm:ss"))
-                               .arg(n).arg(g).arg(seed)
-                               .arg(QString::number(
-                                   ((m_model.getSAResult().metrics.max_horizontal_r - m_model.getKMeansResult().metrics.max_horizontal_r) /
-                                    m_model.getKMeansResult().metrics.max_horizontal_r) * 100.0, 'f', 2)));
+    updateTables();
+    m_isSolving = false;
+
+    double kmR = m_model.getKMeansResult().metrics.max_horizontal_r;
+    double saR = m_model.getSAResult().metrics.max_horizontal_r;
+    double diff = ((saR - kmR) / kmR) * 100.0;
+
+    m_statusAlgo->setText(QString("状态: 求解完成 | N=%1, G=%2m, 瓶颈半径改善 %3%")
+                              .arg(n).arg(g).arg(QString::number(diff, 'f', 2)));
 }
 
 void MainWindow::onGenerateClicked() {
@@ -366,23 +585,23 @@ void MainWindow::onGenerateClicked() {
 
     m_model.generateRandomUsers(n, area, g, rmin, rmax, seed);
     m_model.solveKMeans();
-    m_canvas->update();
+    m_canvas->playEntranceAnimation();
     updateTables();
-    m_statusLabel->setText("已生成随机地面用户链表并完成基线聚类。");
+    m_statusAlgo->setText("状态: 已生成新用户链表并完成基线划分");
 }
 
 void MainWindow::onKMeansClicked() {
     m_model.solveKMeans();
     m_canvas->update();
     updateTables();
-    m_statusLabel->setText("已完成 K-Means (K=2) 基线划分求解。");
+    m_statusAlgo->setText("状态: 已执行 K-Means 聚类划分");
 }
 
 void MainWindow::onSAClicked() {
     m_model.solveSimulatedAnnealing();
     m_canvas->update();
     updateTables();
-    m_statusLabel->setText("已完成 模拟退火 Minimax 创新优化求解。");
+    m_statusAlgo->setText("状态: 已执行 模拟退火 Minimax 优化");
 }
 
 void MainWindow::onRandomSeedClicked() {
@@ -400,13 +619,18 @@ void MainWindow::onResetViewClicked() {
     m_canvas->resetView();
 }
 
+void MainWindow::onToggleLeftPanel() {
+    m_leftPanelExpanded = !m_leftPanelExpanded;
+    m_leftPanel->setVisible(m_leftPanelExpanded);
+}
+
 void MainWindow::onExportImageClicked() {
-    QString filename = QFileDialog::getSaveFileName(this, "导出高清对比图", "uav_coverage_comparison.png", "PNG 图像 (*.png)");
+    QString filename = QFileDialog::getSaveFileName(this, "导出高清矢量/位图对比图", "uav_coverage_comparison.png", "PNG 图像 (*.png)");
     if (!filename.isEmpty()) {
         if (m_canvas->saveImage(filename)) {
-            QMessageBox::information(this, "导出成功", QString("高清对比图已保存至：\n%1").arg(filename));
+            QMessageBox::information(this, "导出成功", QString("超分辨率对比图已成功保存至：\n%1").arg(filename));
         } else {
-            QMessageBox::warning(this, "导出失败", "无法写入图像文件！");
+            QMessageBox::warning(this, "导出失败", "写入图像文件失败！");
         }
     }
 }
@@ -415,9 +639,7 @@ void MainWindow::onExportCSVClicked() {
     QString filename = QFileDialog::getSaveFileName(this, "导出数据表为 CSV", "uav_results.csv", "CSV 文件 (*.csv)");
     if (!filename.isEmpty()) {
         if (m_model.exportCSV(filename.toStdString())) {
-            QMessageBox::information(this, "导出成功", QString("仿真数据表已成功导出至：\n%1").arg(filename));
-        } else {
-            QMessageBox::warning(this, "导出失败", "无法写入 CSV 文件！");
+            QMessageBox::information(this, "导出成功", QString("仿真数据已导出至 CSV 表格：\n%1").arg(filename));
         }
     }
 }
@@ -426,26 +648,91 @@ void MainWindow::onExportJSONClicked() {
     QString filename = QFileDialog::getSaveFileName(this, "导出数据为 JSON", "results.json", "JSON 文件 (*.json)");
     if (!filename.isEmpty()) {
         if (m_model.exportJSON(filename.toStdString())) {
-            QMessageBox::information(this, "导出成功", QString("JSON 数据已成功导出至：\n%1").arg(filename));
+            QMessageBox::information(this, "导出成功", QString("仿真数据已导出为 JSON：\n%1").arg(filename));
         }
     }
 }
 
 void MainWindow::onTableUserSelected(int row, int) {
     if (row >= 0 && row < m_tableUsers->rowCount()) {
-        int uid = m_tableUsers->item(row, 0)->text().replace("U", "").toInt();
+        int uid = m_tableUsers->item(row, 0)->text().replace("U", "").replace("★", "").trimmed().toInt();
         m_canvas->setSelectedUserId(uid);
+        updateUserInfoPanel(uid);
     }
 }
 
 void MainWindow::onCanvasUserClicked(int userId) {
     for (int i = 0; i < m_tableUsers->rowCount(); ++i) {
-        if (m_tableUsers->item(i, 0)->text() == QString("U%1").arg(userId)) {
+        int uid = m_tableUsers->item(i, 0)->text().replace("U", "").replace("★", "").trimmed().toInt();
+        if (uid == userId) {
             m_tableUsers->selectRow(i);
-            m_bottomTabs->setCurrentIndex(1); // 切换到用户表查看
+            updateUserInfoPanel(userId);
             break;
         }
     }
+}
+
+void MainWindow::updateUserInfoPanel(int userId) {
+    if (!m_model.hasSolved()) return;
+
+    UserNode *cur = m_model.getUserListHead();
+    while (cur && cur->id != userId) cur = cur->next;
+    if (!cur) return;
+
+    const SchemeResult &km = m_model.getKMeansResult();
+    const SchemeResult &sa = m_model.getSAResult();
+
+    int didKM = km.assign[userId];
+    int didSA = sa.assign[userId];
+    bool isReassigned = (didKM != didSA);
+
+    m_infoUserId->setText(QString("用户 U%1 节点状态 %2").arg(userId).arg(isReassigned ? "★ (SA重分配)" : ""));
+    m_infoCoord->setText(QString("三维坐标: (%1, %2, 0.0) m").arg(cur->x, 0, 'f', 2).arg(cur->y, 0, 'f', 2));
+    m_infoCapacity->setText(QString("容量需求 Rn: %1 bps/Hz").arg(cur->R, 0, 'f', 2));
+
+    m_infoKmDist->setText(QString("服务基站: UAV %1 | 距离: %2 m").arg(didKM + 1).arg(km.dist_3d[userId], 0, 'f', 2));
+    m_infoKmPower->setText(QString("发射功率 pn: %1 W").arg(km.power[userId], 0, 'f', 2));
+
+    m_infoSaDist->setText(QString("服务基站: UAV %1 | 距离: %2 m").arg(didSA + 1).arg(sa.dist_3d[userId], 0, 'f', 2));
+    m_infoSaPower->setText(QString("发射功率 pn: %1 W").arg(sa.power[userId], 0, 'f', 2));
+
+    if (isReassigned) {
+        m_infoReassign->setText("<span style='color:#E3B341; font-weight:bold;'>💡 智能重分配节点：</span>在模拟退火全局优化中，该节点被智能转移到另一基站，大幅削减了瓶颈外接圆半径！");
+    } else {
+        m_infoReassign->setText("<span style='color:#8B949E;'>两方案归属一致。</span>");
+    }
+}
+
+void MainWindow::onAboutClicked() {
+    QMessageBox::about(this, "关于本系统",
+        "<h3>无人机地面基站覆盖与功率优化系统 [工业仿真平台]</h3>"
+        "<p><b>作者:</b> 肖奕扬 | 中国矿业大学</p>"
+        "<p><b>课程:</b> 数据结构与算法分析课程设计 (第4题)</p>"
+        "<p><b>技术栈:</b> Qt 6.8.2 C++17, QPainter 硬件加速渲染, 严格动态链表结构体存储</p>"
+        "<p><b>核心算法:</b> 精确最小外接圆定点 (MEC)、K-Means 聚类、模拟退火 Minimax 联合优化</p>");
+}
+
+void MainWindow::onMathPrincipleClicked() {
+    m_bottomTabs->setCurrentIndex(2); // 切换至原理选项卡
+}
+
+void MainWindow::onUsageClicked() {
+    QMessageBox::information(this, "使用说明",
+        "1. 在左侧面板调节地面用户数 N、飞行高度 G 与监控区域；\n"
+        "2. 点击【一键全流程求解与对比】即可自动执行链表构建、K-Means 与 SA 优化并启动入场飞散动画；\n"
+        "3. 在画布中支持滚轮缩放、右键拖拽平移、双击复位；\n"
+        "4. 点击画布中任一用户点，右侧面板与底部表格将联动显示遥测详情。");
+}
+
+void MainWindow::onStatusTick() {
+    if (m_isSolving) {
+        m_statusDots = (m_statusDots + 1) % 4;
+        QString dots = QString(".").repeated(m_statusDots);
+        m_statusAlgo->setText("状态: 模拟退火优化计算中" + dots);
+    }
+}
+
+void MainWindow::onBottomPanelAnimFinished() {
 }
 
 void MainWindow::updateTables() {
@@ -478,9 +765,9 @@ void MainWindow::updateMetricsTab() {
         wDiff->setTextAlignment(Qt::AlignCenter);
 
         if ((isLowerBetter && diff < -0.01) || (!isLowerBetter && diff > 0.01)) {
-            wDiff->setForeground(QColor(0, 230, 118)); // 显著改善显示醒目绿色
+            wDiff->setForeground(QColor(57, 211, 83)); // 显著改善显示醒目绿色
         } else if ((isLowerBetter && diff > 0.01) || (!isLowerBetter && diff < -0.01)) {
-            wDiff->setForeground(QColor(255, 112, 67));
+            wDiff->setForeground(QColor(248, 81, 73));
         }
 
         m_tableMetrics->setItem(row, 0, wItem);
@@ -513,23 +800,23 @@ void MainWindow::updateUsersTab() {
 
         bool isReassigned = (km.assign[idx] != sa.assign[idx]);
 
-        auto setItem = [&](int col, const QString &text, const QColor &color = QColor(220, 225, 235)) {
+        auto setItem = [&](int col, const QString &text, const QColor &color = QColor(201, 209, 217)) {
             QTableWidgetItem *item = new QTableWidgetItem(text);
             item->setTextAlignment(Qt::AlignCenter);
             item->setForeground(color);
             m_tableUsers->setItem(row, col, item);
         };
 
-        QColor idColor = isReassigned ? QColor(255, 215, 0) : QColor(220, 225, 235);
+        QColor idColor = isReassigned ? QColor(227, 179, 65) : QColor(201, 209, 217);
         setItem(0, QString("U%1%2").arg(cur->id).arg(isReassigned ? "★" : ""), idColor);
         setItem(1, QString("(%1, %2)").arg(cur->x, 0, 'f', 1).arg(cur->y, 0, 'f', 1));
         setItem(2, QString("%1").arg(cur->R, 0, 'f', 2));
 
-        setItem(3, QString("UAV %1").arg(km.assign[idx] + 1), (km.assign[idx] == 0 ? QColor(255, 100, 100) : QColor(100, 180, 255)));
+        setItem(3, QString("UAV %1").arg(km.assign[idx] + 1), (km.assign[idx] == 0 ? QColor(255, 85, 85) : QColor(88, 166, 255)));
         setItem(4, QString("%1 m").arg(km.dist_3d[idx], 0, 'f', 2));
         setItem(5, QString("%1 W").arg(km.power[idx], 0, 'f', 1));
 
-        setItem(6, QString("UAV %1").arg(sa.assign[idx] + 1), (sa.assign[idx] == 0 ? QColor(255, 100, 100) : QColor(100, 180, 255)));
+        setItem(6, QString("UAV %1").arg(sa.assign[idx] + 1), (sa.assign[idx] == 0 ? QColor(255, 85, 85) : QColor(88, 166, 255)));
         setItem(7, QString("%1 m").arg(sa.dist_3d[idx], 0, 'f', 2));
         setItem(8, QString("%1 W").arg(sa.power[idx], 0, 'f', 1));
 
@@ -540,7 +827,7 @@ void MainWindow::updateUsersTab() {
 
 void MainWindow::updateTheoryTab() {
     QString html = R"(
-        <h3 style="color:#00B4D8; margin-top:2px;">无人机基站覆盖与功率优化数学原理与创新报告摘要</h3>
+        <h3 style="color:#58A6FF; margin-top:2px;">无人机基站覆盖与功率优化数学原理与创新报告摘要</h3>
         <p><b>1. 数据结构设计（链式存储严格要求）：</b><br>
         本系统地面用户数据采用严格的单向动态链表 <code>struct UserNode*</code> 存储。节点包含用户三维空间坐标 (an, bn, 0)、所需香农容量 Rn、三维直线距离 dn、信道系数 hn 以及分配发射功率 pn。利用指针串联所有节点，杜绝静态数组冗余。</p>
 
