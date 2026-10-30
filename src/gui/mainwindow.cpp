@@ -706,7 +706,8 @@ void MainWindow::updateUserInfoPanel(int userId) {
 void MainWindow::onAboutClicked() {
     QMessageBox::about(this, "关于本系统",
         "<h3>无人机地面基站覆盖与功率优化系统 [工业仿真平台]</h3>"
-        "<p><b>作者:</b> 肖奕扬 | 中国矿业大学</p>"
+        "<p><b>作者:</b> 肖弋洋 (04242912) | 电子信息工程25-02班</p>"
+        "<p><b>学院:</b> 中国矿业大学信息与控制工程学院</p>"
         "<p><b>课程:</b> 数据结构与算法分析课程设计 (第4题)</p>"
         "<p><b>技术栈:</b> Qt 6.8.2 C++17, QPainter 硬件加速渲染, 严格动态链表结构体存储</p>"
         "<p><b>核心算法:</b> 精确最小外接圆定点 (MEC)、K-Means 聚类、模拟退火 Minimax 联合优化</p>");

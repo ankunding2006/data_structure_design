@@ -1,8 +1,12 @@
 param (
-    [string]$PkgName = "Question4-UAV-Optimization-Source"
+    [string]$PkgName = ""
 )
 
-$zipFile = "$PkgName.zip"
+if ([string]::IsNullOrWhiteSpace($PkgName)) {
+    $PkgName = [System.Text.Encoding]::UTF8.GetString([System.Text.Encoding]::UTF8.GetBytes("第4题-肖弋洋-电信25-02-04242912"))
+}
+
+$zipFile = Join-Path (Get-Location) "$PkgName.zip"
 if (Test-Path $zipFile) {
     Remove-Item -Force $zipFile
 }
@@ -44,7 +48,9 @@ foreach ($file in $allFiles) {
     Copy-Item -Path $file.FullName -Destination $destFile -Force
 }
 
-Compress-Archive -Path "$tempDir\*" -DestinationPath $zipFile -Force
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::CreateFromDirectory($tempDir, $zipFile, [System.IO.Compression.CompressionLevel]::Optimal, $false)
+
 Remove-Item -Recurse -Force $tempDir
 
 $fileInfo = Get-Item $zipFile
