@@ -22,9 +22,14 @@
 data_structure_design/
 ├── CMakeLists.txt                 # 现代 CMake 跨平台构建规范文件
 ├── UAVOptimizer.pro               # Qt Creator QMake 工程配置文件
-├── build.bat                      # Windows 下一键极速编译脚本 (CMake + Ninja)
-├── run.bat                        # Windows 下一键运行桌面交互软件脚本
+├── build.bat                      # 源码一键构建脚本 (开发者环境使用)
+├── run.bat                        # [免安装] 一键运行引导脚本 (老师解压即用)
 ├── results.json                   # 算法仿真数据导出规范文件
+│
+├── dist/                          # [方案C] 免安装绿色发行版 (零环境依赖)
+│   └── bin/                       # 预编译 EXE 与封装的全部必要 Qt/C++ 运行库 DLL
+│       ├── UAVCoverageOptimizer.exe # 工业级 Qt6 遥测交互平台 (双击秒开)
+│       └── uav_solver.exe         # 独立纯 C++ 算法评测工具
 │
 ├── src/                           # 源代码目录 (Source Directory)
 │   ├── core/                      # 核心业务算法与数据结构层 (严格链式存储)
@@ -34,20 +39,27 @@ data_structure_design/
 │   │   ├── main_gui.cpp           # Qt 桌面应用程序入口
 │   │   ├── mainwindow.h / .cpp    # 航天深色遥测大屏主窗口、菜单栏、工具栏、侧边栏
 │   │   └── canvas.h / .cpp        # 2D 矢量交互态势画布、四旋翼渲染、动效与图例
-│   └── cli/                       # 独立纯 C++ 命令行验证工具 (无 GUI 依赖)
-│       └── main.cpp               # 便于控制台自动化回归测试与性能数据校验
+│   └── cli/                       # 独立纯 C++ 算法单文件验证工具 (零外部库依赖)
+│       └── main.cpp               # 便于控制台自动化回归测试与跨编译器免环境验证
 │
 ├── docs/                          # 分级模块化工程技术文档 (Documentation)
 │   ├── 01_课程设计题目与要求.md    # 课程设计任务书指标对照与评分依据
 │   ├── 02_数学模型与理论推导.md    # 香农公式功率反解、Minimax 等价性证明
 │   ├── 03_数据结构与核心算法.md    # 链式存储结构设计、MEC几何定点与退火算法
 │   ├── 04_软件架构与GUI设计.md     # Qt6 架构、QPainter 矢量动效、菜单工具栏交互
-│   └── 05_测试结果与对比分析.md    # 多种子实测数据、瓶颈半径及发射功率定量对比
+│   ├── 05_测试结果与对比分析.md    # 多种子实测数据、瓶颈半径及发射功率定量对比
+│   └── 06_环境无关与独立运行说明.md# [方案C] 双保险架构详细说明与跨环境测试指南
+│
+├── report/                        # 课程设计实验报告与心得体会正式成果
+│   ├── 2026-2027学年第1学期数据结构与算法分析课程设计封面.docx # 老师要求的标准封面
+│   ├── markdown/                  # 报告与心得体会 Markdown 源码
+│   ├── pdf/                       # Pandoc+XeLaTeX 高清出版级 PDF (含老师封面版式)
+│   └── docx/                      # Pandoc 转换生成的 Word 成果 (含老师封面合并版)
 │
 ├── scripts/                       # 自动化运维与打包脚本
-│   ├── pack_submission.bat / .ps1 # 课程设计轻量化源码邮件打包提交脚本 (过滤中间件)
+│   ├── pack_submission.bat / .ps1 # 课程设计轻量化源码邮件打包提交脚本
 │   ├── build.ps1 / run.ps1        # PowerShell 环境下构建运行脚本
-│   └── gui.py                     # Python 原型验证代码 (已归档，由 Qt6 全面取代)
+│   └── gui.py                     # Python 原型验证代码 (已归档)
 │
 └── assets/                        # 资源与高清效果图
     └── uav_coverage_comparison.png# 工业级双屏对比高清矢量效果图 (可直接用于报告)

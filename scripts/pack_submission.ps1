@@ -3,16 +3,71 @@ param (
 )
 
 if ([string]::IsNullOrWhiteSpace($PkgName)) {
-    $PkgName = [System.Text.Encoding]::UTF8.GetString([System.Text.Encoding]::UTF8.GetBytes("第4题-肖弋洋-电信25-02-04242912"))
+    $PkgName = [char]0x7B2C + "4" + [char]0x9898 + "-" + [char]0x8096 + [char]0x5F0B + [char]0x6D0B + "-" + [char]0x7535 + [char]0x4FE1 + "25-02-04242912"
 }
 
-$zipFile = Join-Path (Get-Location) "$PkgName.zip"
-if (Test-Path $zipFile) {
-    Remove-Item -Force $zipFile
-}
+$suffixSrc = [char]0x6E90 + [char]0x7801 + [char]0x62A5 + [char]0x544A + [char]0x7248
+$suffixDist = [char]0x514D + [char]0x5B89 + [char]0x88C5 + [char]0x8FD0 + [char]0x884C + [char]0x5B8C + [char]0x6574 + [char]0x7248
 
-$excludePatterns = @(
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+$rootPath = (Get-Item .).FullName
+
+# -------------------------------------------------------------
+# 1. 生成纯源码与报告归档包 (供代码审查、查重与极速上传)
+# -------------------------------------------------------------
+$zipFileSrc = Join-Path $rootPath "$PkgName-$suffixSrc.zip"
+if (Test-Path $zipFileSrc) { Remove-Item -Force $zipFileSrc }
+
+$excludePatternsSrc = @(
     '\.exe$',
+    '\.zip$',
+    '\.git',
+    '\\build\\',
+    '\\build$',
+    '\\dist\\',
+    '\\dist$',
+    '\.ninja',
+    'CMakeCache\.txt',
+    'CMakeFiles'
+)
+
+$allFilesSrc = Get-ChildItem -Path $rootPath -Recurse -File | Where-Object {
+    $filePath = $_.FullName
+    $match = $false
+    foreach ($p in $excludePatternsSrc) {
+        if ($filePath -match $p) {
+            $match = $true
+            break
+        }
+    }
+    -not $match
+}
+
+$tempDirSrc = Join-Path $env:TEMP ("pkg_src_" + [System.Guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $tempDirSrc | Out-Null
+
+foreach ($file in $allFilesSrc) {
+    $relPath = $file.FullName.Substring($rootPath.Length).TrimStart('\', '/')
+    $destFile = Join-Path $tempDirSrc $relPath
+    $destSubDir = Split-Path $destFile -Parent
+    if (-not (Test-Path $destSubDir)) {
+        New-Item -ItemType Directory -Path $destSubDir -Force | Out-Null
+    }
+    Copy-Item -Path $file.FullName -Destination $destFile -Force
+}
+
+[System.IO.Compression.ZipFile]::CreateFromDirectory($tempDirSrc, $zipFileSrc, [System.IO.Compression.CompressionLevel]::Optimal, $false)
+Remove-Item -Recurse -Force $tempDirSrc
+$sizeSrcKB = [math]::Round((Get-Item $zipFileSrc).Length / 1KB, 1)
+
+# -------------------------------------------------------------
+# 2. 生成免环境独立运行完整包 (含绿色独立二进制发行版，解压双击直接运行)
+# -------------------------------------------------------------
+$zipFileDist = Join-Path $rootPath "$PkgName-$suffixDist.zip"
+if (Test-Path $zipFileDist) { Remove-Item -Force $zipFileDist }
+
+$excludePatternsDist = @(
     '\.zip$',
     '\.git',
     '\\build\\',
@@ -22,11 +77,10 @@ $excludePatterns = @(
     'CMakeFiles'
 )
 
-$rootPath = (Get-Item .).FullName
-$allFiles = Get-ChildItem -Path $rootPath -Recurse -File | Where-Object {
+$allFilesDist = Get-ChildItem -Path $rootPath -Recurse -File | Where-Object {
     $filePath = $_.FullName
     $match = $false
-    foreach ($p in $excludePatterns) {
+    foreach ($p in $excludePatternsDist) {
         if ($filePath -match $p) {
             $match = $true
             break
@@ -35,12 +89,12 @@ $allFiles = Get-ChildItem -Path $rootPath -Recurse -File | Where-Object {
     -not $match
 }
 
-$tempDir = Join-Path $env:TEMP ("pkg_" + [System.Guid]::NewGuid().ToString("N"))
-New-Item -ItemType Directory -Path $tempDir | Out-Null
+$tempDirDist = Join-Path $env:TEMP ("pkg_dist_" + [System.Guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $tempDirDist | Out-Null
 
-foreach ($file in $allFiles) {
+foreach ($file in $allFilesDist) {
     $relPath = $file.FullName.Substring($rootPath.Length).TrimStart('\', '/')
-    $destFile = Join-Path $tempDir $relPath
+    $destFile = Join-Path $tempDirDist $relPath
     $destSubDir = Split-Path $destFile -Parent
     if (-not (Test-Path $destSubDir)) {
         New-Item -ItemType Directory -Path $destSubDir -Force | Out-Null
@@ -48,15 +102,12 @@ foreach ($file in $allFiles) {
     Copy-Item -Path $file.FullName -Destination $destFile -Force
 }
 
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-[System.IO.Compression.ZipFile]::CreateFromDirectory($tempDir, $zipFile, [System.IO.Compression.CompressionLevel]::Optimal, $false)
-
-Remove-Item -Recurse -Force $tempDir
-
-$fileInfo = Get-Item $zipFile
-$sizeKB = [math]::Round($fileInfo.Length / 1KB, 1)
+[System.IO.Compression.ZipFile]::CreateFromDirectory($tempDirDist, $zipFileDist, [System.IO.Compression.CompressionLevel]::Optimal, $false)
+Remove-Item -Recurse -Force $tempDirDist
+$sizeDistMB = [math]::Round((Get-Item $zipFileDist).Length / 1MB, 2)
 
 Write-Host "========================================================" -ForegroundColor Green
-Write-Host "[Success] Package created: $zipFile" -ForegroundColor Green
-Write-Host "[Size] $sizeKB KB (Clean source package, ready for email)" -ForegroundColor Cyan
+Write-Host "[Success] 交付压缩包生成完毕：" -ForegroundColor Green
+Write-Host " 1. 源码报告版 : $zipFileSrc ($sizeSrcKB KB)" -ForegroundColor Cyan
+Write-Host " 2. 免安装完整版 : $zipFileDist ($sizeDistMB MB)" -ForegroundColor Cyan
 Write-Host "========================================================" -ForegroundColor Green

@@ -2,6 +2,7 @@
 *.o
 *.obj
 *.exe
+!dist/bin/*.exe
 build/
 
 # Package and Temporary Files
