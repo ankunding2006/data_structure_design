@@ -22,7 +22,7 @@
 #include <QScrollArea>
 #include <QGroupBox>
 #include "canvas.h"
-#include "uav_model.h"
+#include "core/uav_model.h"
 
 class MainWindow : public QMainWindow {
     Q_OBJECT

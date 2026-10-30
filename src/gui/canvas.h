@@ -13,7 +13,7 @@
 #include <QPointF>
 #include <QVector>
 #include <QMap>
-#include "uav_model.h"
+#include "core/uav_model.h"
 
 enum class ViewMode {
     DualSideBySide = 0, // Left/right dual-screen comparison view (recommended)

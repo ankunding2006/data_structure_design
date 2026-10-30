@@ -5,13 +5,15 @@ CONFIG += c++17
 TARGET = UAVCoverageOptimizer
 TEMPLATE = app
 
+INCLUDEPATH += src
+
 SOURCES += \
-    main_gui.cpp \
-    mainwindow.cpp \
-    canvas.cpp \
-    uav_model.cpp
+    src/gui/main_gui.cpp \
+    src/gui/mainwindow.cpp \
+    src/gui/canvas.cpp \
+    src/core/uav_model.cpp
 
 HEADERS += \
-    mainwindow.h \
-    canvas.h \
-    uav_model.h
+    src/gui/mainwindow.h \
+    src/gui/canvas.h \
+    src/core/uav_model.h
