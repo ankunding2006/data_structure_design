@@ -276,10 +276,10 @@ void UAVCanvas::paintEvent(QPaintEvent *) {
 
     if (!m_model || !m_model->hasSolved()) {
         // Centered placeholder text
-        p.setPen(QColor(80, 90, 110));
-        p.setFont(QFont("Segoe UI", 13));
+        p.setPen(QColor(130, 140, 165));
+        p.setFont(QFont("Microsoft YaHei", 12));
         p.drawText(rect(), Qt::AlignCenter,
-                   "Ready  \xe2\x80\x94  click [Solve All] in the left panel to deploy UAVs");
+                   "系统就绪 —— 请在左侧控制面板点击【一键全流程求解与对比】启动仿真");
         return;
     }
 
@@ -289,19 +289,19 @@ void UAVCanvas::paintEvent(QPaintEvent *) {
         QRectF rightRect(w, 0, w, height());
 
         drawSingleScenario(p, leftRect,  m_model->getKMeansResult(),
-                           "Scheme A: K-Means (K=2)  Baseline Clustering", false);
+                           "方案 A：K-Means (K=2) 基准聚类划分", false);
         drawSingleScenario(p, rightRect, m_model->getSAResult(),
-                           "Scheme B: Simulated Annealing  Minimax Optimization", true);
+                           "方案 B：模拟退火 (SA) Minimax 创新优化", true);
 
         // Gradient vertical divider
         drawDivider(p, w);
 
     } else if (m_viewMode == ViewMode::KMeansOnly) {
         drawSingleScenario(p, QRectF(rect()), m_model->getKMeansResult(),
-                           "Scheme A: K-Means (K=2)  Baseline Clustering", false);
+                           "方案 A：K-Means (K=2) 基准聚类划分", false);
     } else {
         drawSingleScenario(p, QRectF(rect()), m_model->getSAResult(),
-                           "Scheme B: Simulated Annealing  Minimax Optimization", true);
+                           "方案 B：模拟退火 (SA) Minimax 创新优化", true);
     }
 
     // Floating tooltip card (drawn above everything)
@@ -501,12 +501,12 @@ void UAVCanvas::drawSingleScenario(QPainter &p, const QRectF &rect,
                           3, hudBox.height() - 8),
                    isSA ? UAV_COLOR[1] : UAV_COLOR[0]);
 
-        p.setFont(QFont("Segoe UI", 8));
+        p.setFont(QFont("Microsoft YaHei", 8));
         p.setPen(QColor(190, 200, 220));
         QString hudText =
-            QString("Bottleneck radius max(r): %1 m\n"
-                    "Max 3D distance: %2 m\n"
-                    "Total transmit power: %3 W")
+            QString("瓶颈覆盖半径 max(r): %1 m\n"
+                    "最远用户三维距离: %2 m\n"
+                    "总发射功率: %3 W")
                 .arg(scheme.metrics.max_horizontal_r, 0, 'f', 2)
                 .arg(scheme.metrics.max_3d_dist,      0, 'f', 2)
                 .arg(scheme.metrics.total_power,       0, 'f', 2);
@@ -768,29 +768,29 @@ void UAVCanvas::drawTooltipCard(QPainter &p) {
     // Build rich text lines
     struct Line { QString label; QString value; };
     QVector<Line> lines = {
-        {"User ID",    QString("U%1").arg(cur->id)},
-        {"Position",   QString("(%1, %2, 0) m").arg(cur->x, 0,'f',2).arg(cur->y, 0,'f',2)},
-        {"Capacity Rn", QString("%1 bps/Hz").arg(cur->R, 0,'f',2)},
-        {"Serving UAV", QString("UAV %1").arg(did + 1)},
-        {"3D Dist dn",  QString("%1 m").arg(d3, 0,'f',2)},
-        {"Channel hn",  QString("%1").arg(chan, 0,'e',3)},
-        {"Power pn",    QString("%1 W").arg(pwr, 0,'f',3)},
+        {"用户编号",    QString("U%1").arg(cur->id)},
+        {"平面坐标",   QString("(%1, %2, 0) m").arg(cur->x, 0,'f',2).arg(cur->y, 0,'f',2)},
+        {"容量需求 Rn", QString("%1 bps/Hz").arg(cur->R, 0,'f',2)},
+        {"服务基站",   QString("无人机 UAV %1").arg(did + 1)},
+        {"三维距离 dn", QString("%1 m").arg(d3, 0,'f',2)},
+        {"信道衰减 hn", QString("%1").arg(chan, 0,'e',3)},
+        {"最小发射功率 pn", QString("%1 W").arg(pwr, 0,'f',3)},
     };
     if (isReas) {
         Line reassLine;
-        reassLine.label = "Reassigned";
-        reassLine.value = "Yes (SA optimized)";
+        reassLine.label = "归属优化";
+        reassLine.value = "SA 智能重分配 (离群点收敛)";
         lines.append(reassLine);
     }
 
-    QFont labelFont("Segoe UI", 8, QFont::Bold);
-    QFont valueFont("Segoe UI", 8);
+    QFont labelFont("Microsoft YaHei", 8, QFont::Bold);
+    QFont valueFont("Microsoft YaHei", 8);
 
     QFontMetrics lfm(labelFont);
     QFontMetrics vfm(valueFont);
 
     int lineH     = 18;
-    int cardW     = 220;
+    int cardW     = 250;
     int headerH   = 26;
     int cardH     = headerH + static_cast<int>(lines.size()) * lineH + 12;
 
@@ -829,11 +829,11 @@ void UAVCanvas::drawTooltipCard(QPainter &p) {
     p.fillRect(QRectF(card.left() + 1, card.top() + 1, card.width() - 2, headerH - 1), hdrGrad);
 
     // Header text
-    p.setFont(QFont("Segoe UI", 9, QFont::Bold));
+    p.setFont(QFont("Microsoft YaHei", 9, QFont::Bold));
     p.setPen(Qt::white);
     p.drawText(QRectF(card.left() + 10, card.top() + 4, card.width() - 14, headerH - 4),
                Qt::AlignVCenter | Qt::AlignLeft,
-               QString("User U%1 Details").arg(cur->id));
+               QString("地面用户 U%1 遥测详情").arg(cur->id));
 
     // Separator
     p.setPen(QPen(QColor(50, 60, 80), 1));
@@ -849,7 +849,7 @@ void UAVCanvas::drawTooltipCard(QPainter &p) {
 
         p.setFont(valueFont);
         p.setPen(QColor(210, 220, 240));
-        p.drawText(QPointF(card.left() + 110, y0 + 12), line.value);
+        p.drawText(QPointF(card.left() + 115, y0 + 12), line.value);
         y0 += lineH;
     }
 }
@@ -862,22 +862,22 @@ void UAVCanvas::drawLegend(QPainter &p, const QRectF &rect, bool isSA) {
         QColor  color;
     };
     QVector<Entry> entries = {
-        {"UAV 1 coverage", 0, UAV_COLOR[0]},
-        {"UAV 2 coverage", 0, UAV_COLOR[1]},
-        {"UAV 1 user",     3, UAV_COLOR[0]},
-        {"UAV 2 user",     3, UAV_COLOR[1]},
+        {"无人机 1 覆盖圆", 0, UAV_COLOR[0]},
+        {"无人机 2 覆盖圆", 0, UAV_COLOR[1]},
+        {"无人机 1 归属用户", 3, UAV_COLOR[0]},
+        {"无人机 2 归属用户", 3, UAV_COLOR[1]},
     };
     if (isSA)
-        entries.append({"Reassigned (SA opt)", 1, STAR_COLOR});
+        entries.append({"智能重分配 (SA优化)", 1, STAR_COLOR});
 
-    QFont f("Segoe UI", 7);
+    QFont f("Microsoft YaHei", 7.5);
     QFontMetrics fm(f);
 
     int lineH  = 18;
     int padX   = 10;
     int padY   = 8;
     int iconW  = 22;
-    int cardW  = 165;
+    int cardW  = 175;
     int cardH  = padY * 2 + static_cast<int>(entries.size()) * lineH;
 
     QRectF leg(rect.right() - cardW - 14,
@@ -890,10 +890,10 @@ void UAVCanvas::drawLegend(QPainter &p, const QRectF &rect, bool isSA) {
     p.drawRoundedRect(leg, 5, 5);
 
     // Title
-    p.setFont(QFont("Segoe UI", 7, QFont::Bold));
+    p.setFont(QFont("Microsoft YaHei", 7.5, QFont::Bold));
     p.setPen(QColor(150, 170, 210));
     p.drawText(QRectF(leg.left() + padX, leg.top() + 2, cardW - padX * 2, 16),
-               Qt::AlignLeft | Qt::AlignVCenter, "Legend");
+               Qt::AlignLeft | Qt::AlignVCenter, "图例说明");
 
     p.setFont(f);
     int iy = static_cast<int>(leg.top()) + padY + 10;
