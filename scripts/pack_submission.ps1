@@ -25,6 +25,8 @@ $excludePatterns = @(
     '\.zip$',
     '\.git\\',
     '\.git$',
+    '\.gitignore$',
+    '\.gitattributes$',
     '\\build\\',
     '\\build$',
     '\.ninja',
