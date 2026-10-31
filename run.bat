@@ -1,6 +1,6 @@
+@chcp 65001 >nul
 @echo off
-setlocal
-chcp 65001 >nul
+setlocal enabledelayedexpansion
 title 无人机地面基站覆盖与功率优化系统 - 工业级启动引导
 
 echo =======================================================================
@@ -17,12 +17,19 @@ echo   [1] 启动工业级 Qt6 遥测交互图形界面平台 (推荐演示)
 echo   [2] 启动独立纯 C++ 算法控制台评测验证工具 (快速跑分)
 echo   [3] 退出
 echo.
+set "choice="
 set /p choice="请输入数字编号 [1/2/3] (直接回车默认 1): "
 
-if "%choice%"=="" set choice=1
+if not defined choice set choice=1
+set "choice=%choice: =%"
+
 if "%choice%"=="1" goto run_gui
 if "%choice%"=="2" goto run_cli
 if "%choice%"=="3" goto exit_app
+
+echo.
+echo [提示] 无效输入，默认启动图形界面...
+goto run_gui
 
 :run_gui
 echo.
